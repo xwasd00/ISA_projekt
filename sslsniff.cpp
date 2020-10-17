@@ -17,7 +17,7 @@ using namespace std;
 
 #define ETHERNET_SIZE 14
 #define TCP_PROTOCOL 6
-
+int cnt = 1;
 
 /**TODO: upravit
  * @brief funkce, která uloží do src_port a dst_port zdrojový a cílový port z protokolu a nastaví offset
@@ -145,7 +145,8 @@ void getAddress(ip6_hdr* iph, char* src_addr, char* dst_addr){
  * @param packet ukazatel na začátek paketu
  * */
 void callback(u_char* user, const struct pcap_pkthdr* header, const u_char* packet){
-	
+	cout << "paket: " << cnt << endl;
+	cnt++;
 	// struktura, pomocí níž se lehce vypíše čas
 	/*
 	tm* time;
@@ -182,6 +183,7 @@ void callback(u_char* user, const struct pcap_pkthdr* header, const u_char* pack
 
 	//debug
 	//
+
 	printPacket((char*)packet, offset, 0);
 	printf("%02hhx\n", *data);
 	printPacket((char*)packet, header->caplen, offset);
