@@ -19,7 +19,7 @@ using namespace std;
 #define TCP_PROTOCOL 6
 
 
-/**
+/**TODO: upravit
  * @brief funkce, která uloží do src_port a dst_port zdrojový a cílový port z protokolu a nastaví offset
  * @param tcp ukazatel na začátek tcp hlavičky
  * @param src_port zdrojový port
@@ -27,13 +27,54 @@ using namespace std;
  * @param offset offset od původního začátku paketu
  */
 /*
-void getInfo(tcphdr* tcp, u_short* src_port, u_short* dst_port, short* offset){
+void getPort(tcphdr* tcp, u_short* src_port, u_short* dst_port){
 		*src_port = tcp->th_sport<<8 | tcp->th_sport>>8;
 		*dst_port = tcp->th_dport<<8 | tcp->th_dport>>8;
-		*offset = *offset + sizeof(tcphdr);
 		return;
 }
 */
+
+//debug print
+void printPacket(char* payload, short len, short offset){
+    char buffer[17] = {0};
+    short start = offset % 16;
+    short space = offset % 8;
+    short end_hex = (start + 15) % 16;
+
+    for( short i = offset; i < len; i++){
+
+        if(i % 16 == start){
+            printf("0x%04x: ", i);
+        }
+        if(i % 8 == space){
+            cout << " ";
+        }
+
+        printf("%02hhx ", payload[i]);
+
+        if( payload[i] > 31 && payload[i] < 126){
+            buffer[(i - start) % 16] = payload[i];
+        }
+        else{
+            buffer[(i - start) % 16] = '.';
+        }
+
+        if(i % 16 == end_hex){
+            cout << "  " << buffer << endl;
+            memset(&buffer, 0, sizeof(buffer));
+        }
+    }
+
+    if(len % 16 != start){
+        short fill = 16 - (len-offset)%16;
+        for( int i = 0; i < fill; i++){
+            cout  << "   ";
+        }
+        cout << "  " <<  buffer << endl;
+    }
+    return;
+}
+
 
 /**
  * @brief funkce, která nastaví offset na tcp hlavičku
@@ -48,6 +89,7 @@ void getTcp(ip* iph, short* offset){
     }
     else{
         //TODO:
+		cerr << "neni tcp" << endl;
     }
 }
 
@@ -64,6 +106,7 @@ void getTcp(ip6_hdr* iph, short* offset){
 	}
 	else{
 		//TODO:
+		cerr << "neni tcp"<<endl;
 	}
 }
 
@@ -125,14 +168,32 @@ void callback(u_char* user, const struct pcap_pkthdr* header, const u_char* pack
 		getTcp((ip6_hdr*)(iph), &offset);
 	}
 
-	//TODO:
-	// získání portů + posunutí offsetu o velikost tcp protokolu
-	// port zdroje a cíle
-	u_short src_port, dst_port;
+	// posunutí offsetu o velikost tcp protokolu
 	tcphdr* tcp = (tcphdr*)(packet + offset);
-	//getInfo(tcp, &src_port, &dst_port, &offset);
+	offset = offset + tcp->th_off * 4;
+	//TODO: check FIN from tcp
+	if(header->caplen <= offset+1){
+		printPacket((char*)packet, offset, 0);
+		cout << "pouze hlavicka" <<endl;
+		return;
+	}
+	char* data = (char*)(packet + offset);
+	//TODO:
+
+	//debug
+	//
+	printPacket((char*)packet, offset, 0);
+	printf("%02hhx\n", *data);
+	printPacket((char*)packet, header->caplen, offset);
+	cout << endl;
 
 
+
+
+	// získání portů
+	// port zdroje a cíle
+	//u_short src_port, dst_port;
+	//getPort(tcp, &src_port, &dst_port);
 	
 	// adresa zdroje a cíle
 	char src_addr[INET6_ADDRSTRLEN];
@@ -193,10 +254,12 @@ int main(int argc, char** argv){
 	}
 	
 	// nastavení filtru , a jeho zkompilování
-	if (pcap_lookupnet(arg.dev.data(), &ip, &mask, errbuff) == -1) {
-		cerr << "Couldn't get netmask for device " << errbuff << endl;
-		ip = 0;
-		mask = 0;
+	if (!arg.file){
+		if (pcap_lookupnet(arg.dev.data(), &ip, &mask, errbuff) == -1) {
+			cerr << "Couldn't get netmask for device " << errbuff << endl;
+			ip = 0;
+			mask = 0;
+		}
 	}
 	if (pcap_compile(handle, &fp, "tcp", 0, ip) == -1) {
 		cerr << "Couldn't parse filter " << pcap_geterr(handle) << endl;

@@ -43,6 +43,7 @@ int Args::getOpts(int argc, char** argv){
 			case 'r':
 				filename = optarg;
 				file = true;
+				break;
 
 			// ./sslsniff --help
 			// vytisknutí nápovědy
@@ -81,6 +82,7 @@ int Args::getOpts(int argc, char** argv){
 
 	//není ani soubor ani rozhraní 
 	if(!file && dev.size() == 0){
+		cerr << "ani soubor ani rozhraní" << endl;
 		printHelp();
 		return -1;
 	}

@@ -1,4 +1,6 @@
 *.swp
+*.txt
+sslsniff
 # Prerequisites
 *.d
 
