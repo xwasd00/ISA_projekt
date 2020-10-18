@@ -172,22 +172,38 @@ void callback(u_char* user, const struct pcap_pkthdr* header, const u_char* pack
 	// posunutí offsetu o velikost tcp protokolu
 	tcphdr* tcp = (tcphdr*)(packet + offset);
 	offset = offset + tcp->th_off * 4;
+
 	//TODO: check FIN from tcp
 	if(header->caplen <= offset+1){
-		printPacket((char*)packet, offset, 0);
-		cout << "pouze hlavicka" <<endl;
+		if(tcp->th_flags & TH_FIN){
+			cout << "FIN" << endl << endl;
+			return;
+		}
+		else{
+			cout << "pouze hlavicka" << endl << endl;
+			return;
+		}
+	}
+
+	char* data = (char*)(packet + offset);
+	//TODO: check handshake
+	if(*data == 22){
+		cout << "handshake" << endl << endl;
 		return;
 	}
-	char* data = (char*)(packet + offset);
-	//TODO:
+	//TODO: other data
+	if(*data == 20 || *data == 23){
+		cout << "key exchange nebo application data -> LENGTH += ...; COUNT++;" << endl << endl;
+		return;
+	}
 
+	cout << "ostatni data" << endl << endl;
+	
 	//debug
-	//
-
-	printPacket((char*)packet, offset, 0);
-	printf("%02hhx\n", *data);
-	printPacket((char*)packet, header->caplen, offset);
-	cout << endl;
+	//printPacket((char*)packet, offset, 0);
+	//printf("%02hhx  %d\n", *data, *data);
+	//printPacket((char*)packet, header->caplen, offset);
+	//cout << endl;
 
 
 
@@ -198,7 +214,7 @@ void callback(u_char* user, const struct pcap_pkthdr* header, const u_char* pack
 	//getPort(tcp, &src_port, &dst_port);
 	
 	// adresa zdroje a cíle
-	char src_addr[INET6_ADDRSTRLEN];
+	/*char src_addr[INET6_ADDRSTRLEN];
 	char dst_addr[INET6_ADDRSTRLEN];
 	if (iph->ip_v == 4){
         // získání adres
@@ -208,7 +224,7 @@ void callback(u_char* user, const struct pcap_pkthdr* header, const u_char* pack
     else {
         // získání adres
         getAddress((ip6_hdr*)(iph), src_addr, dst_addr);
-    }
+    }*/
 }
 /**
  * @returns 0 všechno v pořádku
