@@ -17,6 +17,13 @@ using namespace std;
 
 #define ETHERNET_SIZE 14
 #define TCP_PROTOCOL 6
+#define CHANGE_CIPHER_SPEC 0x14
+#define ALERT 0x15
+#define HANDSHAKE 0x16
+#define APPLICATION_DATA 0x17
+#define TLS1_0 0x301
+#define TLS1_1 0x302
+#define TLS1_2 0x303
 int cnt = 1;
 
 /**TODO: upravit
@@ -139,19 +146,16 @@ void getAddress(ip6_hdr* iph, char* src_addr, char* dst_addr){
 }
 
 /**
- * @brief funkce k výpisu informací o paketu
+ * @brief ...
  * @param user -
  * @param header hlavička obsahující informace o paketu (například čas)
  * @param packet ukazatel na začátek paketu
  * */
 void callback(u_char* user, const struct pcap_pkthdr* header, const u_char* packet){
-	cout << "paket: " << cnt << endl;
-	cnt++;
-	// struktura, pomocí níž se lehce vypíše čas
-	/*
-	tm* time;
-	time = localtime(&(header->ts.tv_sec));	
-	*/
+
+    //debug:
+    //cout << endl << "paket: " << cnt << endl;
+	//cnt++;
 
 	// offset, na další hlavičku
 	// ze začátku nastaven na velikost ethernetové hlavičky
@@ -173,58 +177,86 @@ void callback(u_char* user, const struct pcap_pkthdr* header, const u_char* pack
 	tcphdr* tcp = (tcphdr*)(packet + offset);
 	offset = offset + tcp->th_off * 4;
 
-	//TODO: check FIN from tcp
-	if(header->caplen <= offset+1){
-		if(tcp->th_flags & TH_FIN){
-			cout << "FIN" << endl << endl;
-			return;
-		}
-		else{
-			cout << "pouze hlavicka" << endl << endl;
-			return;
-		}
-	}
+	if(tcp->th_flags & TH_FIN){
+		cout << "FIN" << endl << endl;
+		//TODO: check spojeni, jestli je ssl
+		//TODO: vypsani spojeni
 
-	char* data = (char*)(packet + offset);
-	//TODO: check handshake
-	if(*data == 22){
-		cout << "handshake" << endl << endl;
+		// získání portů
+        // port zdroje a cíle
+        //u_short src_port, dst_port;
+        //getPort(tcp, &src_port, &dst_port);
+
+        // adresa zdroje a cíle
+        /*char src_addr[INET6_ADDRSTRLEN];
+        char dst_addr[INET6_ADDRSTRLEN];
+        if (iph->ip_v == 4){
+            // získání adres
+            getAddress(iph, src_addr, dst_addr);
+        }
+        // jde o IPv6
+        else {
+            // získání adres
+            getAddress((ip6_hdr*)(iph), src_addr, dst_addr);
+        }*/
+
+        // struktura, pomocí níž se lehce vypíše čas
+        /*
+        tm* time;
+        time = localtime(&(header->ts.tv_sec));
+        */
 		return;
 	}
-	//TODO: other data
-	if(*data == 20 || *data == 23){
-		cout << "key exchange nebo application data -> LENGTH += ...; COUNT++;" << endl << endl;
-		return;
-	}
+    //TODO: check struktury, jestli dany paket nenalezi spojeni, kdyz ne -> pridani do struktury
 
-	cout << "ostatni data" << endl << endl;
+    char * data = (char*)(packet + offset);
+    short *version;
+    short *length;
+	while(header->caplen > offset + 5){
+        data = (char*)(packet + offset);
+
+	    if(*data == HANDSHAKE){
+	        version = (short *)&(*(data+1));
+            *version = htons(*version);
+
+            if(*version == TLS1_0 || *version == TLS1_1 || *version == TLS1_2) {
+                //TODO: pokud client hello -> nastaveni znaku spojeni na ssl + SNI, jinak length++; count++;...
+                cout << "handshake" << endl << endl;
+                length = (short *) &( *(data + 3) );
+                offset += *length;
+            }
+            else {
+                offset += sizeof(char);
+            }
+
+	    }
+	    else if(*data == CHANGE_CIPHER_SPEC || *data == ALERT || *data == APPLICATION_DATA){
+	        version = (short *)&(*(data+1));
+            *version = htons(*version);
+
+	        if(*version == TLS1_0 || *version == TLS1_1 || *version == TLS1_2) {
+	            //TODO: zjistit, zda je otevrene spojeni, length++; count++;...
+                cout << "key exchange, alert nebo application data -> LENGTH += ...; COUNT++;" << endl << endl;
+                length = (short *)&(*(data+3));
+                offset += htons(*length);
+            }
+            else {
+                offset += sizeof(char);
+            }
+
+	    }
+	    else {
+            offset += sizeof(char);
+        }
+
+	}
 	
 	//debug
 	//printPacket((char*)packet, offset, 0);
-	//printf("%02hhx  %d\n", *data, *data);
+	//printf("%02hhx  %02hhx  %02hhx\n", *data, *(data+1), *(data+2));
 	//printPacket((char*)packet, header->caplen, offset);
 	//cout << endl;
-
-
-
-
-	// získání portů
-	// port zdroje a cíle
-	//u_short src_port, dst_port;
-	//getPort(tcp, &src_port, &dst_port);
-	
-	// adresa zdroje a cíle
-	/*char src_addr[INET6_ADDRSTRLEN];
-	char dst_addr[INET6_ADDRSTRLEN];
-	if (iph->ip_v == 4){
-        // získání adres
-        getAddress(iph, src_addr, dst_addr);
-    }
-    // jde o IPv6
-    else {
-        // získání adres
-        getAddress((ip6_hdr*)(iph), src_addr, dst_addr);
-    }*/
+    return;
 }
 /**
  * @returns 0 všechno v pořádku
