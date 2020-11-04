@@ -175,9 +175,9 @@ void callback(u_char* user, const struct pcap_pkthdr* header, const u_char* pack
 
 	// posunutí offsetu o velikost tcp protokolu
 	tcphdr* tcp = (tcphdr*)(packet + offset);
-	offset = offset + tcp->th_off * 4;
+	offset = offset + tcp->doff * 4;
 
-	if(tcp->th_flags & TH_FIN){
+	if(tcp->fin){
 		cout << "FIN" << endl << endl;
 		//TODO: check spojeni, jestli je ssl
 		//TODO: vypsani spojeni
@@ -212,7 +212,7 @@ void callback(u_char* user, const struct pcap_pkthdr* header, const u_char* pack
     char * data = (char*)(packet + offset);
     short *version;
     short *length;
-	while(header->caplen > offset + 5){
+	while(header->caplen >(unsigned) offset + 5){
         data = (char*)(packet + offset);
 
 	    if(*data == HANDSHAKE){
