@@ -1,6 +1,6 @@
 Args.cpp - kontrola správnosti souboru
-sslsniff.cpp/main - kontrola filtru a souboru (lze číst ze souboru *.pcapng? pomocí vestavěné funkce?)
+Args.cpp - co kdyz budou oba argumenty(-i a -r)? asi ukoncit, nebo uprednostnit jeden argument
 sslsniff.cpp/callback - celé tcp/ssl
-sslsniff.cpp/getTcp(obě funkce) - případ, kdy další hlavička není tcp (co dál? asi skip...)
+sslsniff.cpp/getTcp(obě funkce) - případ, kdy další hlavička není tcp (co dál? asi skip, resp. return?)
 Args.h - komentáře(kontrola)
 Args.cpp - komentáře(kontrola)
