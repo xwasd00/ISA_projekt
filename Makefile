@@ -1,5 +1,5 @@
 CC=g++
-CFLAGS=-std=c++17 -Wall -Wextra -pedantic
+CFLAGS=-std=c++17 -Wall -pedantic
 LD=-lpcap
 SRC=*.cpp
 PROJ=sslsniff

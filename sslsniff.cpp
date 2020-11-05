@@ -28,7 +28,7 @@ using namespace std;
 
 
 struct conn{
-    time_t start_time;
+    timeval start_time;
     char client_addr[INET6_ADDRSTRLEN];
     char server_addr[INET6_ADDRSTRLEN];
     u_short client_port;
@@ -38,11 +38,24 @@ struct conn{
     string SNI;
     bool ssl = false;
 };
-
 std::vector<conn> conn_vec;
-int cnt = 1;
 
-/**TODO: upravit
+void print_conn(conn* c, const timeval* ts){
+    // struktura, pomocí níž se vypíše čas
+    tm* time;
+    time = localtime(&(ts->tv_sec));
+    timeval duration;
+    timersub(ts, &(c->start_time), &duration);
+    printf("%04d-%02d-%02d %02d:%02d:%02d.%d,", time->tm_year+1900, time->tm_mon, time->tm_mday,
+           time->tm_hour, time->tm_min, time->tm_sec, (int)(ts->tv_usec));
+    cout << c->client_addr << " " << c->client_port <<
+         " , " << c->server_addr << " " << c->SNI <<
+         " ," << c->packets << "," << c->bytes <<
+         "," << duration.tv_sec << "." << duration.tv_usec << endl;
+    return;
+}
+
+/**
  * @brief funkce, která uloží do src_port a dst_port zdrojový a cílový port z protokolu a nastaví offset
  * @param tcp ukazatel na začátek tcp hlavičky
  * @param src_port zdrojový port
@@ -53,49 +66,6 @@ void getPort(tcphdr* tcp, u_short* src_port, u_short* dst_port){
 		*dst_port = tcp->th_dport<<8 | tcp->th_dport>>8;
 		return;
 }
-
-
-//debug print
-void printPacket(char* payload, short len, short offset){
-    char buffer[17] = {0};
-    short start = offset % 16;
-    short space = offset % 8;
-    short end_hex = (start + 15) % 16;
-
-    for( short i = offset; i < len; i++){
-
-        if(i % 16 == start){
-            printf("0x%04x: ", i);
-        }
-        if(i % 8 == space){
-            cout << " ";
-        }
-
-        printf("%02hhx ", payload[i]);
-
-        if( payload[i] > 31 && payload[i] < 126){
-            buffer[(i - start) % 16] = payload[i];
-        }
-        else{
-            buffer[(i - start) % 16] = '.';
-        }
-
-        if(i % 16 == end_hex){
-            cout << "  " << buffer << endl;
-            memset(&buffer, 0, sizeof(buffer));
-        }
-    }
-
-    if(len % 16 != start){
-        short fill = 16 - (len-offset)%16;
-        for( int i = 0; i < fill; i++){
-            cout  << "   ";
-        }
-        cout << "  " <<  buffer << endl;
-    }
-    return;
-}
-
 
 /**
  * @brief funkce, která nastaví offset na tcp hlavičku
@@ -116,7 +86,7 @@ void getTcp(ip* iph, short* offset){
 
 /**
  * @brief funkce, která nastaví offset na tcp hlavičku
- * @param iph ip hlavička
+ * @param iph ipv6 hlavička
  * @param offset offset od původního začátku paketu
  */
 void getTcp(ip6_hdr* iph, short* offset){
@@ -132,34 +102,6 @@ void getTcp(ip6_hdr* iph, short* offset){
 }
 
 /**
- * @brief funkce, která získá uloží do src_addr a dst_addr zdrojovou a cílovou adresu
- * @param iph ip hlavička
- * @param src_addr zdrojová adresa
- * @param dst_addr cílová adresa
- */
-void getAddress(ip* iph, char* src_addr, char* dst_addr){
-
-	// získání adres:
-	inet_ntop(AF_INET, (void*)&(iph->ip_src), src_addr, INET_ADDRSTRLEN);
-	inet_ntop(AF_INET, (void*)&(iph->ip_dst), dst_addr, INET_ADDRSTRLEN);
-	return;
-}
-
-/**
- * @brief funkce, která uloží do src_addr a dst_addr zdrojovou a cílovou adresu
- * @param iph ip hlavička
- * @param src_addr zdrojová adresa
- * @param dst_addr cílová adresa
- */
-void getAddress(ip6_hdr* iph, char* src_addr, char* dst_addr){
-
-	// získání adres:
-	inet_ntop(AF_INET6, (void*)&(iph->ip6_src), src_addr, INET6_ADDRSTRLEN);
-	inet_ntop(AF_INET6, (void*)&(iph->ip6_dst), dst_addr, INET6_ADDRSTRLEN);
-	return;
-}
-
-/**
  * @brief ...
  * @param user -
  * @param header hlavička obsahující informace o paketu (například čas)
@@ -167,75 +109,104 @@ void getAddress(ip6_hdr* iph, char* src_addr, char* dst_addr){
  * */
 void callback(u_char* user, const struct pcap_pkthdr* header, const u_char* packet){
 
-    //debug:
-    cout << "paket: " << cnt << "  ";
-	cnt++;
-
 	// offset, na další hlavičku
 	// ze začátku nastaven na velikost ethernetové hlavičky
 	short offset = ETHERNET_SIZE;
 	ip* iph = (ip*)(packet + offset);
+
+    //pro ziskani adres
     char src_addr[INET6_ADDRSTRLEN];
     char dst_addr[INET6_ADDRSTRLEN];
-
 	// jde o IPv4 hlavičku
 	if (iph->ip_v == 4){
-		// posunutí offsetu o velikost tcp hlavičky
-		getTcp(iph, &offset);
-		// získání adres
-        getAddress(iph, src_addr, dst_addr);
+		getTcp(iph, &offset);// posunutí offsetu o velikost tcp hlavičky
+        // získání adres
+        inet_ntop(AF_INET, (void*)&(iph->ip_src), src_addr, INET_ADDRSTRLEN);
+        inet_ntop(AF_INET, (void*)&(iph->ip_dst), dst_addr, INET_ADDRSTRLEN);
 	}
 	// jde o IPv6
 	else {
-		// posunutí offsetu o velikost hlavičky
-		getTcp((ip6_hdr*)(iph), &offset);
-		// získání adres
-        getAddress((ip6_hdr*)(iph), src_addr, dst_addr);
+		getTcp((ip6_hdr*)(iph), &offset);// posunutí offsetu o velikost hlavičky
+        // získání adres
+        ip6_hdr* ip6h = (ip6_hdr*)(iph);
+		inet_ntop(AF_INET6, (void*)&(ip6h->ip6_src), src_addr, INET6_ADDRSTRLEN);
+        inet_ntop(AF_INET6, (void*)&(ip6h->ip6_dst), dst_addr, INET6_ADDRSTRLEN);
 	}
 
 	// posunutí offsetu o velikost tcp protokolu
 	tcphdr* tcp = (tcphdr*)(packet + offset);
 	offset = offset + tcp->doff * 4;
 
+	// získání portů
+	// port zdroje a cíle
+    u_short src_port, dst_port;
+    getPort(tcp, &src_port, &dst_port);
 
-	if(tcp->fin){
-		cout << "FIN" << endl << endl;
-		//TODO: check spojeni, jestli je ssl
-		//TODO: vypsani spojeni
+    conn* connection;
+    bool found = false;
+    for (auto iter = conn_vec.begin();iter != conn_vec.end(); ++iter){
+        conn *tmp = &(*iter);
+        if((strcmp(tmp->client_addr, src_addr) == 0 && strcmp(tmp->server_addr, dst_addr) == 0) ||
+                (strcmp(tmp->client_addr, dst_addr) == 0 && strcmp(tmp->server_addr, src_addr) == 0))
+        {
+            if((tmp->client_port == src_port && tmp->server_port == dst_port) ||
+                    (tmp->client_port == dst_port && tmp->server_port == src_port))
+            {
+                //nalezen
+                found = true;
+                connection = tmp;
+                break;
+            }
+        }
+    }
+    //nenalezen
+    if(!found){
+        conn tmp;
+        memcpy(tmp.client_addr, src_addr, INET6_ADDRSTRLEN);
+        memcpy(tmp.server_addr, dst_addr, INET6_ADDRSTRLEN);
+        //prozatimni reseni, kdo je klient a kdo server se dozvim z handshaku
+        tmp.client_port = src_port;
+        tmp.server_port = dst_port;
+        tmp.start_time = header->ts;
+        conn_vec.push_back(tmp);
+        connection = &conn_vec.back();
+    }
+    //vystup connection -> ukazatel na nalezeny prvek
+    connection->packets++;
 
-		//asi zvlast do funkce
-		// získání portů
-        // port zdroje a cíle
-        //u_short src_port, dst_port;
-        //getPort(tcp, &src_port, &dst_port);
+    if(tcp->fin){
+        //TODO: přepsání do funkce
+        //TODO: vymazani struktury
+        if(connection->ssl) {
 
-        // struktura, pomocí níž se lehce vypíše čas
-        /*
-        tm* time;
-        time = localtime(&(header->ts.tv_sec));
-        */
-        // pro porovnani dvou casu -> difftime(time_t t1, time_t t2)
-		return;
-	}
-    //TODO: check struktury, jestli dany paket nenalezi spojeni, kdyz ne -> pridani do struktury
+            print_conn(connection, &(header->ts));
+
+        }
+        else{
+            //FIN -> remove
+        }
+        cout << "FIN" << endl << endl;
+        return;
+    }
+
 
     char * data = (char*)(packet + offset);
-    short *version;
-    short *length;
+    short version;
+    short length;
 	while(header->caplen >(unsigned) offset + 5){
         data = (char*)(packet + offset);
 
 	    if(*data == HANDSHAKE){
-	        version = (short *)&(*(data+1));
-            *version = htons(*version);
+	        version = htons( *( (short *)&(*(data+1)) ) );
 
-            if(*version == TLS1_0 || *version == TLS1_1 || *version == TLS1_2) {
-                //TODO: pokud client hello -> nastaveni znaku spojeni na ssl + SNI, jinak length+= ...; count++;...
-                cout << "handshake" << endl;
-                length = (short *) &( *(data + 3) );
-                *length = htons(*length);
-                //asi zvlast do funkce
-                offset += *length;
+            if(version == TLS1_0 || version == TLS1_1 || version == TLS1_2) {
+                connection->ssl = true;
+                //TODO: pokud client hello -> nastaveni znaku spojeni na ssl + SNI
+                //TODO: pokud client hello -> nastavit klienta a server (adresy + porty)
+                //TODO: pokud server hello -> kontrola portu a serveru + pripadne nastaveni znaku ssl
+                length = htons( *( (short *)&(*(data + 3)) ) );
+                connection->bytes += length;
+                offset += length;
             }
             else {
                 offset += sizeof(char);
@@ -243,16 +214,15 @@ void callback(u_char* user, const struct pcap_pkthdr* header, const u_char* pack
 
 	    }
 	    else if(*data == CHANGE_CIPHER_SPEC || *data == ALERT || *data == APPLICATION_DATA){
-	        version = (short *)&(*(data+1));
-            *version = htons(*version);
+            version = htons(*((short *)&(*(data+1))));
+            //version = (short *)&(*(data+1));
+            //*version = htons(*version);
 
-	        if(*version == TLS1_0 || *version == TLS1_1 || *version == TLS1_2) {
-	            //TODO: zjistit, zda je otevrene spojeni, length+= ...; count++;...
-                cout << "key exchange, alert nebo application data -> LENGTH += ...; COUNT++;" << endl;
-                length = (short *) &( *(data+3) );
-                *length = htons(*length);
-                //zvlast do funkce?...
-                offset += *length;
+	        if(version == TLS1_0 || version == TLS1_1 || version == TLS1_2) {
+                length = htons( *( (short *)&(*(data+3)) ) );
+                //*length = htons(*length);
+                connection->bytes += length;
+                offset += length;
 
             }
             else {
@@ -270,7 +240,7 @@ void callback(u_char* user, const struct pcap_pkthdr* header, const u_char* pack
 	//printPacket((char*)packet, offset, 0);
 	//printf("%02hhx  %02hhx  %02hhx\n", *data, *(data+1), *(data+2));
 	//printPacket((char*)packet, header->caplen, offset);
-	cout << endl;
+	//cout << endl;
     return;
 }
 /**
