@@ -11,6 +11,7 @@
 #include <netinet/tcp.h>
 #include <cstring>
 #include <arpa/inet.h>
+#include <vector>
 #include "Args.h"
 
 using namespace std;
@@ -24,6 +25,21 @@ using namespace std;
 #define TLS1_0 0x301
 #define TLS1_1 0x302
 #define TLS1_2 0x303
+
+
+struct conn{
+    time_t start_time;
+    char client_addr[INET6_ADDRSTRLEN];
+    char server_addr[INET6_ADDRSTRLEN];
+    u_short client_port;
+    u_short server_port;
+    int bytes = 0;
+    int packets = 0;
+    string SNI;
+    bool ssl = false;
+};
+
+std::vector<conn> conn_vec;
 int cnt = 1;
 
 /**TODO: upravit
@@ -31,15 +47,13 @@ int cnt = 1;
  * @param tcp ukazatel na začátek tcp hlavičky
  * @param src_port zdrojový port
  * @param dst_port cílový port
- * @param offset offset od původního začátku paketu
  */
-/*
 void getPort(tcphdr* tcp, u_short* src_port, u_short* dst_port){
 		*src_port = tcp->th_sport<<8 | tcp->th_sport>>8;
 		*dst_port = tcp->th_dport<<8 | tcp->th_dport>>8;
 		return;
 }
-*/
+
 
 //debug print
 void printPacket(char* payload, short len, short offset){
@@ -154,57 +168,53 @@ void getAddress(ip6_hdr* iph, char* src_addr, char* dst_addr){
 void callback(u_char* user, const struct pcap_pkthdr* header, const u_char* packet){
 
     //debug:
-    //cout << endl << "paket: " << cnt << endl;
-	//cnt++;
+    cout << "paket: " << cnt << "  ";
+	cnt++;
 
 	// offset, na další hlavičku
 	// ze začátku nastaven na velikost ethernetové hlavičky
 	short offset = ETHERNET_SIZE;
 	ip* iph = (ip*)(packet + offset);
+    char src_addr[INET6_ADDRSTRLEN];
+    char dst_addr[INET6_ADDRSTRLEN];
 
 	// jde o IPv4 hlavičku
 	if (iph->ip_v == 4){
 		// posunutí offsetu o velikost tcp hlavičky
 		getTcp(iph, &offset);
+		// získání adres
+        getAddress(iph, src_addr, dst_addr);
 	}
 	// jde o IPv6
 	else {
 		// posunutí offsetu o velikost hlavičky
 		getTcp((ip6_hdr*)(iph), &offset);
+		// získání adres
+        getAddress((ip6_hdr*)(iph), src_addr, dst_addr);
 	}
 
 	// posunutí offsetu o velikost tcp protokolu
 	tcphdr* tcp = (tcphdr*)(packet + offset);
 	offset = offset + tcp->doff * 4;
 
+
 	if(tcp->fin){
 		cout << "FIN" << endl << endl;
 		//TODO: check spojeni, jestli je ssl
 		//TODO: vypsani spojeni
 
+		//asi zvlast do funkce
 		// získání portů
         // port zdroje a cíle
         //u_short src_port, dst_port;
         //getPort(tcp, &src_port, &dst_port);
-
-        // adresa zdroje a cíle
-        /*char src_addr[INET6_ADDRSTRLEN];
-        char dst_addr[INET6_ADDRSTRLEN];
-        if (iph->ip_v == 4){
-            // získání adres
-            getAddress(iph, src_addr, dst_addr);
-        }
-        // jde o IPv6
-        else {
-            // získání adres
-            getAddress((ip6_hdr*)(iph), src_addr, dst_addr);
-        }*/
 
         // struktura, pomocí níž se lehce vypíše čas
         /*
         tm* time;
         time = localtime(&(header->ts.tv_sec));
         */
+        // pro porovnani dvou casu -> difftime(time_t t1, time_t t2)
 		return;
 	}
     //TODO: check struktury, jestli dany paket nenalezi spojeni, kdyz ne -> pridani do struktury
@@ -220,9 +230,11 @@ void callback(u_char* user, const struct pcap_pkthdr* header, const u_char* pack
             *version = htons(*version);
 
             if(*version == TLS1_0 || *version == TLS1_1 || *version == TLS1_2) {
-                //TODO: pokud client hello -> nastaveni znaku spojeni na ssl + SNI, jinak length++; count++;...
-                cout << "handshake" << endl << endl;
+                //TODO: pokud client hello -> nastaveni znaku spojeni na ssl + SNI, jinak length+= ...; count++;...
+                cout << "handshake" << endl;
                 length = (short *) &( *(data + 3) );
+                *length = htons(*length);
+                //asi zvlast do funkce
                 offset += *length;
             }
             else {
@@ -235,10 +247,13 @@ void callback(u_char* user, const struct pcap_pkthdr* header, const u_char* pack
             *version = htons(*version);
 
 	        if(*version == TLS1_0 || *version == TLS1_1 || *version == TLS1_2) {
-	            //TODO: zjistit, zda je otevrene spojeni, length++; count++;...
-                cout << "key exchange, alert nebo application data -> LENGTH += ...; COUNT++;" << endl << endl;
-                length = (short *)&(*(data+3));
-                offset += htons(*length);
+	            //TODO: zjistit, zda je otevrene spojeni, length+= ...; count++;...
+                cout << "key exchange, alert nebo application data -> LENGTH += ...; COUNT++;" << endl;
+                length = (short *) &( *(data+3) );
+                *length = htons(*length);
+                //zvlast do funkce?...
+                offset += *length;
+
             }
             else {
                 offset += sizeof(char);
@@ -255,7 +270,7 @@ void callback(u_char* user, const struct pcap_pkthdr* header, const u_char* pack
 	//printPacket((char*)packet, offset, 0);
 	//printf("%02hhx  %02hhx  %02hhx\n", *data, *(data+1), *(data+2));
 	//printPacket((char*)packet, header->caplen, offset);
-	//cout << endl;
+	cout << endl;
     return;
 }
 /**
