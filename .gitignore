@@ -1,7 +1,7 @@
+*.py
 .idea
 *.png
 *.swp
-*.txt
 sslsniff
 # Prerequisites
 *.d
