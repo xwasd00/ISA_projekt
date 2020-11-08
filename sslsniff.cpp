@@ -16,17 +16,24 @@
 
 using namespace std;
 
-#define ETHERNET_SIZE 14
-#define TCP_PROTOCOL 6
-#define CHANGE_CIPHER_SPEC 0x14
-#define ALERT 0x15
-#define HANDSHAKE 0x16
-#define APPLICATION_DATA 0x17
+#define ETHERNET_SIZE       14
+#define TCP_PROTOCOL        6
+
+//typ ssl spojení
+#define CHANGE_CIPHER_SPEC   0x14
+#define ALERT                0x15
+#define HANDSHAKE            0x16
+#define APPLICATION_DATA     0x17
+
+//verze ssl
+#define SSL3_0 0x300
 #define TLS1_0 0x301
 #define TLS1_1 0x302
 #define TLS1_2 0x303
-#define CLIENT_HELLO 0x01
-#define SERVER_HELLO 0x02
+
+// typ zprávy handshake
+#define CLIENT_HELLO          0x01 // 1
+#define SERVER_HELLO          0x02 // 2
 
 /**
  * @var conn
@@ -43,7 +50,8 @@ struct conn{
     string SNI;                          /**< SNI serveru */
     bool ssl = false;                    /**< jedná se o ssl spojení (byl poslán paket s client hello) */
     bool srv_hello = false;              /**< přišel paket se server hello */
-    bool tcp_fin = false;                /**< přišel první FIN, čeká se na druhý */
+    bool client_fin = false;                /**< přišel FIN od klienta */
+    bool server_fin = false;                /**< přišel FIN od serveru */
 };
 
 /**
@@ -63,15 +71,19 @@ void print_conn(conn* c, const timeval* ts){
     tm* time;
     time = localtime(&(c->start_time.tv_sec));
 
-    // pro vypocet trvani
+    // pro výpočet trvaní ssl spojení
     timeval duration;
     timersub(ts, &(c->start_time), &duration);
-    printf("%04d-%02d-%02d %02d:%02d:%02d.%06d,", time->tm_year+1900, time->tm_mon+1, time->tm_mday,
-           time->tm_hour, time->tm_min, time->tm_sec, (int)(c->start_time.tv_usec));
+
+    //výpis ve formátu:
+    //<timestamp>,<client ip>,<client port>,<server ip>,<SNI>,<bytes>,<packets>,<duration sec>
+    printf("%04d-%02d-%02d %02d:%02d:%02d.%06ld,", time->tm_year+1900, time->tm_mon+1, time->tm_mday,
+           time->tm_hour, time->tm_min, time->tm_sec, (c->start_time.tv_usec));
     cout << c->client_addr << "," << c->client_port <<
          "," << c->server_addr << "," << c->SNI <<
          "," << c->bytes << "," << c->packets <<
-         "," << duration.tv_sec << "." << duration.tv_usec << endl;
+         "," << duration.tv_sec << ".";
+    printf("%06ld\n", duration.tv_usec);
     return;
 }
 
@@ -81,41 +93,62 @@ void print_conn(conn* c, const timeval* ts){
  * @param c spojení, do kterého se má zapsat SNI
  */
 void get_SNI(char* data, conn* c){
+
+    //Client Random(32) + Handshake Header(4) + Client Version(2)
     data += 38;
+
+    //Session ID
     char sl = *data;
     data += sl + 1;
+
+    //Cipher suites
     u_short csl = htons(*((short *)&(*data)));
     data += csl + 2;
+
+    //Compression methods
     char cml = *data;
     data += cml + 1;
-    short extension_len = htons(*((short *)&(*data)));
 
+    //Extensions length
+    int extension_len = htons(*((short *)&(*data)));
     data += 2;
-    u_short exts = 0;
-    while(extension_len > exts){
+    int exts = 0;
+    int size = 0;
+
+    //cyklus, hledající SNI v rozšířeních
+    while(extension_len > size){
+
+        //jméno rozšíření
         u_short ext_name = htons(*((short *)&(*data)));
+
+        //jde o SNI
         if(ext_name == 0){
-            u_short off = 4;
-            u_short sni_dl = htons(*((short *)&(*(data+2))));
-            while(off < sni_dl) {
-                char list_entry = *(data + off + 2);
-                u_short le_len = htons(*((short *) &(*(data + off + 3))));
-                if (list_entry == 0) {
-                    c->SNI.clear();
-                    char *hn = data + off + 5;
-                    for (int i = 0; i < le_len; i++) {
-                        /*if(hn[i] == 0){
-                            return;
-                        }*/
-                        c->SNI.push_back(hn[i]);
-                    }
-                    return;
+
+            //prohledání všech list entry
+            char* sni_data;
+            sni_data = data + 4;
+
+            char list_entry = *(sni_data + 2);
+            if (list_entry == 0) {
+
+                //délka hostname
+                u_short hostname_len = htons(*((short *) &(*(sni_data + 3))));
+
+                //zapsání SNI do ssl spojení
+                c->SNI.clear();
+                char *hn = sni_data + 5;
+                for (int i = 0; i < hostname_len; i++) {
+                    c->SNI.push_back(hn[i]);
                 }
-                off += le_len + 5;
+                return;
             }
+            return;
         }
+
+        //další rozšíření
         exts = htons(*((short *)&(*(data+2))));
         data += exts + 4;
+        size += exts + 4;
     }
     return;
 }
@@ -146,27 +179,34 @@ void switch_client_server(conn *c){
  * @return ukazatel na nalezené/nově přidané spojení
  */
 conn* check_conn(char* src_addr, char* dst_addr, u_short src_port, u_short dst_port, timeval ts){
+
+    //cyklus přes všechny prvky conn_vec
     for (auto iter = conn_vec.begin();iter != conn_vec.end(); ++iter){
         conn *tmp = &(*iter);
 
+        //konrola aadres a portů
         if((strcmp(tmp->client_addr, src_addr) == 0 && strcmp(tmp->server_addr, dst_addr) == 0) ||
            (strcmp(tmp->client_addr, dst_addr) == 0 && strcmp(tmp->server_addr, src_addr) == 0))
         {
             if((tmp->client_port == src_port && tmp->server_port == dst_port) ||
                (tmp->client_port == dst_port && tmp->server_port == src_port))
             {
-                //nalezen
+                //spojení nalezeno
                 return tmp;
             }
         }
     }
-    //nenalezen
+
+    //spojení nenalezeno -> vytvoření a vložení nového
     conn tmp;
+
+    //prozatimní řešení, kdo je klient a kdo server se dozvím z Handshake
     memcpy(tmp.client_addr, src_addr, INET6_ADDRSTRLEN);
     memcpy(tmp.server_addr, dst_addr, INET6_ADDRSTRLEN);
-    //prozatimni reseni, kdo je klient a kdo server se dozvim z handshaku
     tmp.client_port = src_port;
     tmp.server_port = dst_port;
+
+    //časové razítko prvního paketu
     tmp.start_time = ts;
     conn_vec.push_back(tmp);
     return &conn_vec.back();
@@ -178,11 +218,16 @@ conn* check_conn(char* src_addr, char* dst_addr, u_short src_port, u_short dst_p
  * @param c ukazatel na spojení, které se má odstranit
  */
 void remove_from_vec(conn* c){
+
+    //cyklus přes všechny prvky conn_vec
     for (auto iter = conn_vec.begin();iter != conn_vec.end(); ++iter){
         conn *tmp = &(*iter);
+
+        //kontrola adres a portů
         if(strcmp(tmp->client_addr, c->client_addr) == 0 && strcmp(tmp->server_addr, c->server_addr) == 0){
             if(tmp->client_port == c->client_port && tmp->server_port == c->server_port){
-                //nalezen
+
+                //spojení nalezeno
                 conn_vec.erase(iter);
                 return;
             }
@@ -197,7 +242,7 @@ void remove_from_vec(conn* c){
  * @param dst_addr ukazatel do něhož se zapíše cílová adresa
  * @param offset offset od původního začátku paketu
  */
-void getAddr(ip* iph, char* src_addr,  char* dst_addr, u_short* offset){
+void getAddr(ip* iph, char* src_addr,  char* dst_addr, unsigned* offset){
     // jde o IPv4 hlavičku
     if (iph->ip_v == 4){
         // posunutí offsetu o velikost tcp hlavičky
@@ -227,7 +272,7 @@ void callback(u_char* user, const struct pcap_pkthdr* header, const u_char* pack
 
 	// offset, na další hlavičku
 	// ze začátku nastaven na velikost ethernetové hlavičky
-	u_short offset = ETHERNET_SIZE;
+	unsigned offset = ETHERNET_SIZE;
 	ip* iph = (ip*)(packet + offset);
 
     //pro ziskani adres
@@ -245,79 +290,134 @@ void callback(u_char* user, const struct pcap_pkthdr* header, const u_char* pack
     src_port = htons(tcp->source);
     dst_port = htons(tcp->dest);
 
+    //získání ukazatele na aktuální spojení z vektoru spojení (conn_vec)
     conn* connection = check_conn(src_addr, dst_addr, src_port, dst_port, header->ts);
+
+    //přičtení paketu ke spojení
     connection->packets++;
 
-    if(tcp->fin){
-        if(connection->ssl && connection->srv_hello) {
-            if (connection->tcp_fin) {
-                print_conn(connection, &(header->ts));
-                remove_from_vec(connection);
-            } else {
-                connection->tcp_fin = true;
-            }
-        }
-        else {
-            remove_from_vec(connection);
-        }
-        return;
-    }
+
 
 
     char * data;
     u_short version;
-    u_short length;
-	while(header->caplen > (unsigned) offset + 5){
+    unsigned length;
+
+    // cyklus hledá v paketu ssl hlavičky
+	while(header->caplen >= offset + 5){
         data = (char*)(packet + offset);
-	    if(*data == HANDSHAKE){
+
+        //možná následuje Handshake
+        if(*data == HANDSHAKE){
+            //verze ssl
 	        version = htons( *( (u_short *)&(*(data+1)) ) );
-            if(version == TLS1_0 || version == TLS1_1 || version == TLS1_2) {
+            if(version == TLS1_0 || version == TLS1_1 ||
+                version == TLS1_2 || version == SSL3_0) {
+
+                //typ handshake
                 char *hello_ptr = data + 5;
+                //Client Hello
                 if(*hello_ptr == CLIENT_HELLO){
                     connection->ssl = true;
+
+                    //v případě, že adresa+port serveru a klienta jsou obráceně
                     if(strcmp(connection->client_addr, src_addr) != 0){
                         switch_client_server(connection);
                     }
+                    //získání Server Name Indication
                     get_SNI( hello_ptr, connection );
+                    //přičtení velikosti ssl zprávy do celkové velikosti ssl spojení
                     length = htons( *( (u_short *)&(*(data + 3)) ) );
                     connection->bytes += length;
-                    offset += length;
+                    //přeskočení dat o délku zprávy -> délka + velikost délky(2) + verze(2) + typ(1)
+                    offset += length + 5;
                 }
+                //Server Hello
                 else if(*hello_ptr == SERVER_HELLO){
                     connection->srv_hello = true;
+
+                    //přičtení velikosti ssl zprávy do celkové velikosti ssl spojení
                     length = htons( *( (short *)&(*(data + 3)) ) );
                     connection->bytes += length;
-                    offset += length;
+                    //přeskočení dat o délku zprávy -> délka + velikost délky(2) + verze(2) + typ(1)
+                    offset += length + 5;
                 }
-                else{
-                    offset += 1;
+                //Certificate, Server key exchange, Server hello done,...
+                else {
+
+                    //přičtení velikosti ssl zprávy do celkové velikosti ssl spojení
+                    length = htons( *( (short *)&(*(data + 3)) ) );
+                    connection->bytes += length;
+                    //přeskočení dat o délku zprávy -> délka + velikost délky(2) + verze(2) + typ(1)
+                    offset += length + 5;
+                }
+                if(strcmp(connection->SNI.data(), "preview.redd.it") == 0){
+                    printf("%d : %02hhx %02hhx\n", length, *(data+3), *(data+4));
                 }
             }
+
+            //nesprávná verze ssl -> není ssl hlavička
             else {
                 offset += 1;
             }
 	    }
-	    else if(*data == CHANGE_CIPHER_SPEC || *data == ALERT || *data == APPLICATION_DATA){
-            version = htons(*((short *)&(*(data+1))));
-	        if(version == TLS1_0 || version == TLS1_1 || version == TLS1_2) {
+
+        //jde nejspíš o Application data, Alert, ...
+	    else if(*data == CHANGE_CIPHER_SPEC || *data == ALERT ||
+	            *data == APPLICATION_DATA){
+
+	        version = htons(*((short *)&(*(data+1))));
+
+            //verze ssl
+	        if(version == TLS1_0 || version == TLS1_1 ||
+	            version == TLS1_2 || version == SSL3_0) {
+                //přičtení velikosti ssl zprávy do celkové velikosti ssl spojení
                 length = htons( *( (short *)&(*(data+3)) ) );
                 connection->bytes += length;
-                offset += length;
+                //přeskočení dat o délku zprávy -> délka + velikost délky(2) + verze(2) + typ(1)
+                offset += length + 5;
+                if(strcmp(connection->SNI.data(), "preview.redd.it") == 0){
+                    printf("%d : %02hhx %02hhx\n", length, *(data+3), *(data+4));
+                }
             }
+
+	        //nesprávná verze ssl -> není ssl
             else {
-                offset += sizeof(char);
+                offset += 1;
             }
 	    }
-	    else {
-            offset += sizeof(char);
-        }
-	}
 
-	//debug
-	//printPacket((char*)packet, offset, 0);
-	//printf("%02hhx  %02hhx  %02hhx\n", *data, *(data+1), *(data+2));
-	//printPacket((char*)packet, header->caplen, offset);
-	//cout << endl;
+	    //není ssl -> další bajt
+	    else {
+            offset += 1;
+        }
+    }
+
+    //jde o FIN
+    if(tcp->fin){
+        if(strcmp(connection->client_addr, src_addr) == 0 && connection->client_port == src_port){
+            connection->client_fin = true;
+        }
+        else{
+            connection->server_fin = true;
+        }
+        //jde o ssl spojení
+        if(connection->ssl && connection->srv_hello) {
+
+
+            //FIN ze serveru i od klienta -> vypsání spojení
+            if (connection->client_fin && connection->server_fin) {
+                print_conn(connection, &(header->ts));
+                remove_from_vec(connection);
+            }
+        }
+
+        //není ssl -> uvolnění paměti
+        else {
+            //remove_from_vec(connection);
+        }
+    }
+
     return;
 }
 /**
