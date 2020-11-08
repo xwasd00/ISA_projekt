@@ -103,7 +103,10 @@ void get_SNI(char* data, conn* c){
                 if (list_entry == 0) {
                     c->SNI.clear();
                     char *hn = data + off + 5;
-                    for (int i = 0; i <= le_len; i++) {
+                    for (int i = 0; i < le_len; i++) {
+                        /*if(hn[i] == 0){
+                            return;
+                        }*/
                         c->SNI.push_back(hn[i]);
                     }
                     return;
@@ -239,8 +242,8 @@ void callback(u_char* user, const struct pcap_pkthdr* header, const u_char* pack
 	// získání portů
 	// port zdroje a cíle
     u_short src_port, dst_port;
-    src_port = htons(tcp->th_sport);
-    dst_port = htons(tcp->th_dport);
+    src_port = htons(tcp->source);
+    dst_port = htons(tcp->dest);
 
     conn* connection = check_conn(src_addr, dst_addr, src_port, dst_port, header->ts);
     connection->packets++;
