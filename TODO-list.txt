@@ -1,5 +1,4 @@
-Args.cpp - kontrola správnosti souboru(je to vůbec třeba?)
-Args.cpp - co kdyz budou oba argumenty(-i a -r)? asi ukoncit, nebo uprednostnit jeden argument
-sslsniff.cpp/getTcp(obě funkce) - případ, kdy další hlavička není tcp (co dál? asi skip, resp. return?)
+Args.cpp - co kdyz budou oba argumenty(-i a -r)? asi ukoncit, nebo uprednostnit jeden argument?
 Args.h - komentáře(kontrola)
 Args.cpp - komentáře(kontrola)
+sslsniff - komentáře(ve funkcích -> více)

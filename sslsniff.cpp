@@ -28,22 +28,35 @@ using namespace std;
 #define CLIENT_HELLO 0x01
 #define SERVER_HELLO 0x02
 
-
+/**
+ * @var conn
+ * @brief struktura pro tcp spojení, kde #ssl a #srv_hello udává, zda-li jde o ssl spojení
+ */
 struct conn{
-    timeval start_time;
-    char client_addr[INET6_ADDRSTRLEN];
-    char server_addr[INET6_ADDRSTRLEN];
-    u_short client_port;
-    u_short server_port;
-    unsigned int bytes = 0;
-    unsigned int packets = 0;
-    string SNI;
-    bool ssl = false;
-    bool srv_hello = false;
-    bool tcp_fin = false;
+    timeval start_time;                  /**< začátek tcp spojení */
+    char client_addr[INET6_ADDRSTRLEN];  /**< adresa klienta */
+    char server_addr[INET6_ADDRSTRLEN];  /**< adresa serveru */
+    u_short client_port;                 /**< port klienta */
+    u_short server_port;                 /**< port serveru */
+    unsigned int bytes = 0;              /**< bajty ssl spojení*/
+    unsigned int packets = 0;            /**< počet paketů ssl spojení */
+    string SNI;                          /**< SNI serveru */
+    bool ssl = false;                    /**< jedná se o ssl spojení (byl poslán paket s client hello) */
+    bool srv_hello = false;              /**< přišel paket se server hello */
+    bool tcp_fin = false;                /**< přišel první FIN, čeká se na druhý */
 };
+
+/**
+ * @var conn_vec
+ * @brief vektor, obsahující aktivní tcp spojení uložené v struktuře #conn
+ */
 std::vector<conn> conn_vec;
 
+/**
+ * @brief vypsání ssl spojení ze struktury #c
+ * @param c ssl spojení
+ * @param ts čas paketu ukončujícího ssl spojení (pro výpočet trvání ssl spojení)
+ */
 void print_conn(conn* c, const timeval* ts){
 
     // struktura, pomocí níž se vypíše čas
@@ -62,8 +75,12 @@ void print_conn(conn* c, const timeval* ts){
     return;
 }
 
+/**
+ * @brief získání Server Name Indication z Client Hello
+ * @param data ukazatel na data v Client Hello
+ * @param c spojení, do kterého se má zapsat SNI
+ */
 void get_SNI(char* data, conn* c){
-    //unsigned len = htonl( *( (unsigned *)&(*(data+1)) ) )>>8;
     data += 38;
     char sl = *data;
     data += sl + 1;
@@ -100,6 +117,10 @@ void get_SNI(char* data, conn* c){
     return;
 }
 
+/**
+ * @brief funkce prohodí porty + adresy klienta a serveru
+ * @param c tcp spojení
+ */
 void switch_client_server(conn *c){
     u_short tmp_p;
     char tmp_a[INET6_ADDRSTRLEN];
@@ -112,6 +133,15 @@ void switch_client_server(conn *c){
     return;
 }
 
+/**
+ * @brief funkce najde tcp spojení z #conn_vec , v případě nenalezení přidá spojení na konec
+ * @param src_addr zdrojová adresa tcp spojení
+ * @param dst_addr cílová adresa tcp spojenní
+ * @param src_port zdrojový port tcp spojení
+ * @param dst_port cílový port tcp spojení
+ * @param ts čas příchodu paketu, v případě nenalezení spojení
+ * @return ukazatel na nalezené/nově přidané spojení
+ */
 conn* check_conn(char* src_addr, char* dst_addr, u_short src_port, u_short dst_port, timeval ts){
     for (auto iter = conn_vec.begin();iter != conn_vec.end(); ++iter){
         conn *tmp = &(*iter);
@@ -139,6 +169,11 @@ conn* check_conn(char* src_addr, char* dst_addr, u_short src_port, u_short dst_p
     return &conn_vec.back();
 }
 
+
+/**
+ * @brief funkce odstraní spojení c z vektoru #conn_vec
+ * @param c ukazatel na spojení, které se má odstranit
+ */
 void remove_from_vec(conn* c){
     for (auto iter = conn_vec.begin();iter != conn_vec.end(); ++iter){
         conn *tmp = &(*iter);
@@ -153,50 +188,25 @@ void remove_from_vec(conn* c){
 }
 
 /**
- * @brief funkce, která nastaví offset na tcp hlavičku
- * @param iph ip hlavička
+ * @brief funkce zíslká zdrojovou a cílovou adresu z ip hlavičky a posune offset o velikost ip hlavičky
+ * @param iph hlavička ip (v4 nebo v6)
+ * @param src_addr ukazatel do něhož se zapíše zdojová adresa
+ * @param dst_addr ukazatel do něhož se zapíše cílová adresa
  * @param offset offset od původního začátku paketu
  */
-void getTcp(ip* iph, u_short* offset){
-	
-    if(iph->ip_p == TCP_PROTOCOL){
-		// posunutí offsetu:
-		*offset = *offset + iph->ip_hl * 4;
-    }
-    else{
-        //TODO:
-		cerr << "neni tcp" << endl;
-    }
-}
-
-/**
- * @brief funkce, která nastaví offset na tcp hlavičku
- * @param iph ipv6 hlavička
- * @param offset offset od původního začátku paketu
- */
-void getTcp(ip6_hdr* iph, u_short* offset){
-	
-	if(iph->ip6_ctlun.ip6_un1.ip6_un1_nxt == TCP_PROTOCOL){
-		// posunutí offsetu:
-		*offset = *offset + sizeof(ip6_hdr);
-	}
-	else{
-		//TODO:
-		cerr << "neni tcp"<<endl;
-	}
-}
-
 void getAddr(ip* iph, char* src_addr,  char* dst_addr, u_short* offset){
     // jde o IPv4 hlavičku
     if (iph->ip_v == 4){
-        getTcp(iph, offset);// posunutí offsetu o velikost tcp hlavičky
+        // posunutí offsetu o velikost tcp hlavičky
+        *offset = *offset + iph->ip_hl * 4;
         // získání adres
         inet_ntop(AF_INET, (void*)&(iph->ip_src), src_addr, INET_ADDRSTRLEN);
         inet_ntop(AF_INET, (void*)&(iph->ip_dst), dst_addr, INET_ADDRSTRLEN);
     }
         // jde o IPv6
     else {
-        getTcp((ip6_hdr*)(iph), offset);// posunutí offsetu o velikost hlavičky
+        // posunutí offsetu o velikost tcp hlavičky
+        *offset = *offset + sizeof(ip6_hdr);
         // získání adres
         ip6_hdr* ip6h = (ip6_hdr*)(iph);
         inet_ntop(AF_INET6, (void*)&(ip6h->ip6_src), src_addr, INET6_ADDRSTRLEN);
@@ -205,7 +215,7 @@ void getAddr(ip* iph, char* src_addr,  char* dst_addr, u_short* offset){
 }
 
 /**
- * @brief ...
+ * @brief funkce k výpisu informací o paketu
  * @param user -
  * @param header hlavička obsahující informace o paketu (například čas)
  * @param packet ukazatel na začátek paketu
@@ -251,7 +261,7 @@ void callback(u_char* user, const struct pcap_pkthdr* header, const u_char* pack
     }
 
 
-    char * data = (char*)(packet + offset);
+    char * data;
     u_short version;
     u_short length;
 	while(header->caplen > (unsigned) offset + 5){

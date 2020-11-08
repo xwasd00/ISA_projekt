@@ -76,9 +76,6 @@ int Args::getOpts(int argc, char** argv){
 		cerr << "Chybí soubor." << endl;
 		return 50;
 	}
-	if(file){
-		//TODO: overeni spravnosti souboru
-	}
 
 	//není ani soubor ani rozhraní 
 	if(!file && dev.size() == 0){
