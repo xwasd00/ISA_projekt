@@ -8,4 +8,4 @@ LOGIN=xsovam00
 $(PROJ):
 	$(CC) $(CFLAGS) $(SRC) $(LD) -o $(PROJ)
 pack:
-	tar cf $(LOGIN).tar Makefile *.cpp *.h *.md *.pdf
+	tar cf $(LOGIN).tar --ignore-failed-read Makefile *.cpp *.h *.md *.pdf

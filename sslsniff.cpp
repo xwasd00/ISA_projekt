@@ -30,6 +30,7 @@ using namespace std;
 #define TLS1_0 0x301
 #define TLS1_1 0x302
 #define TLS1_2 0x303
+#define TLS1_3 0x304
 
 // typ zprávy handshake
 #define CLIENT_HELLO          0x01 // 1
@@ -50,8 +51,8 @@ struct conn{
     string SNI;                          /**< SNI serveru */
     bool ssl = false;                    /**< jedná se o ssl spojení (byl poslán paket s client hello) */
     bool srv_hello = false;              /**< přišel paket se server hello */
-    bool client_fin = false;                /**< přišel FIN od klienta */
-    bool server_fin = false;                /**< přišel FIN od serveru */
+    bool client_fin = false;             /**< přišel FIN od klienta */
+    bool server_fin = false;             /**< přišel FIN od serveru */
 };
 
 /**
@@ -275,7 +276,7 @@ void callback(u_char* user, const struct pcap_pkthdr* header, const u_char* pack
 	unsigned offset = ETHERNET_SIZE;
 	ip* iph = (ip*)(packet + offset);
 
-    //pro ziskani adres
+    //pro ziskani adres + nastavení offsetu
     char src_addr[INET6_ADDRSTRLEN];
     char dst_addr[INET6_ADDRSTRLEN];
     getAddr(iph, src_addr, dst_addr, &offset);
@@ -312,7 +313,7 @@ void callback(u_char* user, const struct pcap_pkthdr* header, const u_char* pack
             //verze ssl
 	        version = htons( *( (u_short *)&(*(data+1)) ) );
             if(version == TLS1_0 || version == TLS1_1 ||
-                version == TLS1_2 || version == SSL3_0) {
+                version == TLS1_2 || version == SSL3_0 || version == TLS1_3) {
 
                 //typ handshake
                 char *hello_ptr = data + 5;
@@ -335,8 +336,11 @@ void callback(u_char* user, const struct pcap_pkthdr* header, const u_char* pack
                 //Server Hello
                 else if(*hello_ptr == SERVER_HELLO){
                     connection->srv_hello = true;
+                    if(strcmp(connection->server_addr, src_addr) != 0) {
+                        switch_client_server(connection);
+                    }
 
-                    //přičtení velikosti ssl zprávy do celkové velikosti ssl spojení
+                        //přičtení velikosti ssl zprávy do celkové velikosti ssl spojení
                     length = htons( *( (short *)&(*(data + 3)) ) );
                     connection->bytes += length;
                     //přeskočení dat o délku zprávy -> délka + velikost délky(2) + verze(2) + typ(1)
@@ -370,7 +374,7 @@ void callback(u_char* user, const struct pcap_pkthdr* header, const u_char* pack
 
             //verze ssl
 	        if(version == TLS1_0 || version == TLS1_1 ||
-	            version == TLS1_2 || version == SSL3_0) {
+	            version == TLS1_2 || version == SSL3_0 || version == TLS1_3) {
                 //přičtení velikosti ssl zprávy do celkové velikosti ssl spojení
                 length = htons( *( (short *)&(*(data+3)) ) );
                 connection->bytes += length;
@@ -395,10 +399,14 @@ void callback(u_char* user, const struct pcap_pkthdr* header, const u_char* pack
 
     //jde o FIN
     if(tcp->fin){
-        if(strcmp(connection->client_addr, src_addr) == 0 && connection->client_port == src_port){
+        //fin od klienta
+        if(strcmp(connection->client_addr, src_addr) == 0 && connection->client_port == src_port &&
+            strcmp(connection->server_addr, dst_addr) == 0 && connection->server_port == dst_port){
             connection->client_fin = true;
         }
-        else{
+        //fin od serveru
+        else if(strcmp(connection->server_addr, src_addr) == 0 && connection->server_port == src_port &&
+                strcmp(connection->client_addr, dst_addr) == 0 && connection->client_port == dst_port){
             connection->server_fin = true;
         }
         //jde o ssl spojení
@@ -439,11 +447,14 @@ int main(int argc, char** argv){
 	int retval = arg.getOpts(argc, argv); 
 	switch(retval){
 		case 0:
+		    //vše OK
 			break;
 		case -1:
+		    //vypsána nápověda/rozhraní -> konec programu
 			return 0;
 			break;
 		default:
+		    //chybně zadány argumenty
 			return retval;
 			break;
 	}
@@ -487,10 +498,10 @@ int main(int argc, char** argv){
 	// funkce callback() => vypsání paketu
 	if (pcap_loop(handle, -1, callback, nullptr) != 0){
 		cerr << "pcap_loop error : " << pcap_geterr(handle) << endl;
-        conn_vec.clear();
 		return 53;
 	}
-	conn_vec.clear();
+    pcap_freecode(&fp);
+	pcap_close(handle);
 	return 0;
 }
 // end ipk-sniffer.cpp
