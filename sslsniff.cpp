@@ -215,7 +215,6 @@ conn* check_conn(char* src_addr, char* dst_addr, u_short src_port, u_short dst_p
     return &conn_vec.back();
 }
 
-
 /**
  * @brief funkce odstraní spojení c z vektoru #conn_vec
  * @param c ukazatel na spojení, které se má odstranit
@@ -244,6 +243,8 @@ void remove_from_vec(conn* c){
  * @param src_addr ukazatel do něhož se zapíše zdojová adresa
  * @param dst_addr ukazatel do něhož se zapíše cílová adresa
  * @param offset offset od původního začátku paketu
+ * @returns 0 vse ok
+ * @returns 1 ip hlavička nenalezena
  */
 int getAddr(ip* iph, char* src_addr,  char* dst_addr, unsigned* offset){
     // jde o IPv4 hlavičku
@@ -317,6 +318,7 @@ void callback(u_char* user, const struct pcap_pkthdr* header, const u_char* pack
 	while(header->caplen >= offset + 5){
         data = (char*)(packet + offset);
 
+        /// HANDSHAKE
         //možná následuje Handshake
         if(*data == HANDSHAKE){
             //verze ssl
@@ -326,7 +328,7 @@ void callback(u_char* user, const struct pcap_pkthdr* header, const u_char* pack
 
                 //typ handshake
                 char *hello_ptr = data + 5;
-                //Client Hello
+                /// Client Hello
                 if(*hello_ptr == CLIENT_HELLO){
                     connection->ssl = true;
 
@@ -342,7 +344,7 @@ void callback(u_char* user, const struct pcap_pkthdr* header, const u_char* pack
                     //přeskočení dat o délku zprávy -> délka + velikost délky(2) + verze(2) + typ(1)
                     offset += length + 5;
                 }
-                //Server Hello
+                /// Server Hello
                 else if(*hello_ptr == SERVER_HELLO){
                     connection->srv_hello = true;
                     if(strcmp(connection->server_addr, src_addr) != 0) {
@@ -355,7 +357,7 @@ void callback(u_char* user, const struct pcap_pkthdr* header, const u_char* pack
                     //přeskočení dat o délku zprávy -> délka + velikost délky(2) + verze(2) + typ(1)
                     offset += length + 5;
                 }
-                //Certificate, Server key exchange, Server hello done,...
+                /// Certificate, Server key exchange, Server hello done,...
                 else {
 
                     //přičtení velikosti ssl zprávy do celkové velikosti ssl spojení
@@ -364,17 +366,15 @@ void callback(u_char* user, const struct pcap_pkthdr* header, const u_char* pack
                     //přeskočení dat o délku zprávy -> délka + velikost délky(2) + verze(2) + typ(1)
                     offset += length + 5;
                 }
-                if(strcmp(connection->SNI.data(), "preview.redd.it") == 0){
-                    printf("%d : %02hhx %02hhx\n", length, *(data+3), *(data+4));
-                }
             }
-
             //nesprávná verze ssl -> není ssl hlavička
             else {
                 offset += 1;
             }
 	    }
 
+
+        /// APPLICATION DATA, ALERT, ...
         //jde nejspíš o Application data, Alert, ...
 	    else if(*data == CHANGE_CIPHER_SPEC || *data == ALERT ||
 	            *data == APPLICATION_DATA){
@@ -408,6 +408,7 @@ void callback(u_char* user, const struct pcap_pkthdr* header, const u_char* pack
 
     //jde o FIN
     if(tcp->fin){
+
         //fin od klienta
         if(strcmp(connection->client_addr, src_addr) == 0 && connection->client_port == src_port &&
             strcmp(connection->server_addr, dst_addr) == 0 && connection->server_port == dst_port){
@@ -428,12 +429,20 @@ void callback(u_char* user, const struct pcap_pkthdr* header, const u_char* pack
                 remove_from_vec(connection);
             }
         }
-
-        //není ssl -> uvolnění paměti
+        //není ssl
         else {
-            //remove_from_vec(connection);
+            return;
+        }
+
+    }
+    //RST -> okamžité ukončení spojení
+    else if(tcp->rst){
+        if(connection->ssl && connection->srv_hello) {
+            print_conn(connection);
+            remove_from_vec(connection);
         }
     }
+
 
     return;
 }
@@ -511,13 +520,14 @@ int main(int argc, char** argv){
 	}
     pcap_freecode(&fp);
 	pcap_close(handle);
-
+/*
 	// vypsání neukončeného spojení (v případě zachytávání ze souboru)
     for(auto connection = conn_vec.begin(); connection != conn_vec.end(); ++connection) {
         if (connection->ssl && connection->srv_hello) {
             print_conn(&(*connection));
         }
     }
+    */
 	return 0;
 }
 // end ipk-sniffer.cpp
