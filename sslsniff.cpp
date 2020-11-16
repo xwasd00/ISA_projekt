@@ -17,6 +17,7 @@
 using namespace std;
 
 #define ETHERNET_SIZE       14
+#define ETH_P_8021Q         0x8100
 #define TCP_PROTOCOL        6
 
 //typ ssl spojení
@@ -42,6 +43,7 @@ using namespace std;
  */
 struct conn{
     timeval start_time;                  /**< začátek tcp spojení */
+    timeval end_time;                    /**< konec spojení */
     char client_addr[INET6_ADDRSTRLEN];  /**< adresa klienta */
     char server_addr[INET6_ADDRSTRLEN];  /**< adresa serveru */
     u_short client_port;                 /**< port klienta */
@@ -66,7 +68,7 @@ std::vector<conn> conn_vec;
  * @param c ssl spojení
  * @param ts čas paketu ukončujícího ssl spojení (pro výpočet trvání ssl spojení)
  */
-void print_conn(conn* c, const timeval* ts){
+void print_conn(conn* c){
 
     // struktura, pomocí níž se vypíše čas
     tm* time;
@@ -74,7 +76,7 @@ void print_conn(conn* c, const timeval* ts){
 
     // pro výpočet trvaní ssl spojení
     timeval duration;
-    timersub(ts, &(c->start_time), &duration);
+    timersub(&(c->end_time), &(c->start_time), &duration);
 
     //výpis ve formátu:
     //<timestamp>,<client ip>,<client port>,<server ip>,<SNI>,<bytes>,<packets>,<duration sec>
@@ -243,7 +245,7 @@ void remove_from_vec(conn* c){
  * @param dst_addr ukazatel do něhož se zapíše cílová adresa
  * @param offset offset od původního začátku paketu
  */
-void getAddr(ip* iph, char* src_addr,  char* dst_addr, unsigned* offset){
+int getAddr(ip* iph, char* src_addr,  char* dst_addr, unsigned* offset){
     // jde o IPv4 hlavičku
     if (iph->ip_v == 4){
         // posunutí offsetu o velikost tcp hlavičky
@@ -251,16 +253,19 @@ void getAddr(ip* iph, char* src_addr,  char* dst_addr, unsigned* offset){
         // získání adres
         inet_ntop(AF_INET, (void*)&(iph->ip_src), src_addr, INET_ADDRSTRLEN);
         inet_ntop(AF_INET, (void*)&(iph->ip_dst), dst_addr, INET_ADDRSTRLEN);
+        return 0;
     }
         // jde o IPv6
-    else {
+    else if(iph->ip_v == 6){
         // posunutí offsetu o velikost tcp hlavičky
         *offset = *offset + sizeof(ip6_hdr);
         // získání adres
         ip6_hdr* ip6h = (ip6_hdr*)(iph);
         inet_ntop(AF_INET6, (void*)&(ip6h->ip6_src), src_addr, INET6_ADDRSTRLEN);
         inet_ntop(AF_INET6, (void*)&(ip6h->ip6_dst), dst_addr, INET6_ADDRSTRLEN);
+        return 0;
     }
+    return 1;
 }
 
 /**
@@ -276,10 +281,14 @@ void callback(u_char* user, const struct pcap_pkthdr* header, const u_char* pack
 	unsigned offset = ETHERNET_SIZE;
 	ip* iph = (ip*)(packet + offset);
 
+
+
     //pro ziskani adres + nastavení offsetu
     char src_addr[INET6_ADDRSTRLEN];
     char dst_addr[INET6_ADDRSTRLEN];
-    getAddr(iph, src_addr, dst_addr, &offset);
+    if(getAddr(iph, src_addr, dst_addr, &offset) != 0){
+        return;
+    }
 
 	// posunutí offsetu o velikost tcp protokolu
 	tcphdr* tcp = (tcphdr*)(packet + offset);
@@ -297,8 +306,8 @@ void callback(u_char* user, const struct pcap_pkthdr* header, const u_char* pack
     //přičtení paketu ke spojení
     connection->packets++;
 
-
-
+    //možná je poslední
+    connection->end_time = header->ts;
 
     char * data;
     u_short version;
@@ -415,7 +424,7 @@ void callback(u_char* user, const struct pcap_pkthdr* header, const u_char* pack
 
             //FIN ze serveru i od klienta -> vypsání spojení
             if (connection->client_fin && connection->server_fin) {
-                print_conn(connection, &(header->ts));
+                print_conn(connection);
                 remove_from_vec(connection);
             }
         }
@@ -502,6 +511,13 @@ int main(int argc, char** argv){
 	}
     pcap_freecode(&fp);
 	pcap_close(handle);
+
+	// vypsání neukončeného spojení (v případě zachytávání ze souboru)
+    for(auto connection = conn_vec.begin(); connection != conn_vec.end(); ++connection) {
+        if (connection->ssl && connection->srv_hello) {
+            print_conn(&(*connection));
+        }
+    }
 	return 0;
 }
 // end ipk-sniffer.cpp
