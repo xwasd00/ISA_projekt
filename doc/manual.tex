@@ -16,14 +16,14 @@
 \newpage
 
 \section{Úvod do problematiky}
+SSL/TLS vrstva se nachází z pohledu síťové architektury mezi aplikační a transportní vrstvou. SSL vrstva zajišťuje šifrování aplikační vrstvy. TLS spojení začíná Handshakem. Handshake se skládá z Client a Server Hello. Klient posílá Client Hello obsahuje seznam podporovaných šifer, seznam kompresních metod a seznam rozšíření. V seznamu rozšíření lze většinou nalézt mimo jiné Server Name Indication (SNI). Server by měl poslat Server Hello, které obsahuje jen vybranou metodu šifrování a vybranou kompresní metodu. Součástí Handshaku by mělo být například certifikát, generování klíčů, Sever Hello Done. 
 
-
-%\begin{figure}[H]
-%    \centering
-%    \scalebox{0.39}{\includegraphics{ip-v4-datagram-header.png}}
-%    \caption{Hlavička IPv4\cite{obr1}}
-%    \label{obrazek 1}
-%\end{figure}
+\begin{figure}[H]
+    \centering
+    \scalebox{0.39}{\includegraphics{ssl.png}}
+    \caption{SSL/TLS spojení\cite{obr1}}
+    \label{obrazek 1}
+\end{figure}
 
 \section{Implementace}
 Program nejdříve zpracuje argumenty programu pomocí getopts\cite{getopt}. Otevře rozhraní pro zachytávání paketů nebo otevře soubor se síťovým provozem, nastaví filtr na zachytávání tcp paketů a pomocí funkce \verb|pcap_loop| a \verb|callback| funkce\cite{pcap} zachytává pakety. V~\verb|callback| funkci zavolá funkci \verb|getAddress|. Tato funkce zjistí z IP nebo IPv6 hlavičky zdrojovou a cílovou adresu a velikost IP hlavičky. Z TCP se získá zdrojový a cílový port. Následně se spojení vyhledá ve vektoru \verb|conn_vec|, v případě nenalezení se do vektoru vloží nové spojení. Následně se zjistí, zda-li jde o SSL spojení. V případě ukončení spojení se SSL spojení vypíše a spojení se smaže z vektoru spojení. Za ukončení spojení se považuje zachycení TCP s příznakem FIN z obou stran (od serveru i klienta), nebo zachycení TCP s příznakem RST z jedné strany.
@@ -33,12 +33,14 @@ Program nejdříve zpracuje argumenty programu pomocí getopts\cite{getopt}. Ote
 Cyklus v \verb|callback| funkci přečítá bajt po bajtu obsah a hledá příznaky SSL hlavičky, která obsahuje typ hlavičky, verzi protokolu a délku zprávy. Toto řešení je z důvodu možné různé velikosti obsahu tcp a velikosti SSL obsahu. V případě handshake program sleduje, zda se jedná o Client Hello nebo Server Hello. V případě Client Hello se snaží najít Server Name Indication (SNI). V případě nenalezení se místo SNI nic nevypíše.
 
 
-\subsection{využití knihoven}
+\subsection{Využití knihoven}
 
 Bylo využito knihovny pcap.h a jejich funkcí pro zachytávaní paketů. Knihovny netinet/ip.h pro použití struktury \verb|struct ip|, ze které analyzátor načítá adresy a kontroluje další hlavičku. Podobně díky knihovně netinet/ip6.h a struktuře \verb|struct ip6_hdr|. Z~knihovny netinet/tcp.h bylo využito struktury \verb|struct tcphdr|. 
 
 \section{Základní informace o programu}
-Informace o SSL spojení se vypisují ve tvaru: \verb|<timestamp>,<client~ip>,<client~port>,<server~ip>,<SNI>,<bytes>,<packets>,<duration sec>|\newline
+Informace o SSL spojení se vypisují ve tvaru (na jednom řádku): \newline 
+\texttt{\small<timestamp>,<client ip>,<client port>,<server ip>,<SNI>,<bytes>,<packets>,\newline<duration sec>}
+\newline
 Všechny časové údaje jsou zaokrouhlené na 6 desetinných míst.
 
 \subsection{Návod na použití}
@@ -66,7 +68,7 @@ Všechny časové údaje jsou zaokrouhlené na 6 desetinných míst.
 
 \subsection{Obrázky}
 \begin{thebibliography}{99}
-% \bibitem{obr1} GeeksforGeeks. n.d. Introduction And Ipv4 Datagram Header - Geeksforgeeks. [online] Dostupné z: \url{https://www.geeksforgeeks.org/introduction-and-ipv4-datagram-header/}
+\bibitem{obr1} AGA(2018). 0RTT handshake state diagram. [online] Dostupné z: \url{https://www.geeksforgeeks.org/introduction-and-ipv4-datagram-header/}
 \end{thebibliography}
 
 
