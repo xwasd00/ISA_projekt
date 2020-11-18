@@ -1,23 +1,23 @@
-# Monitoring SSL spojení
+.TH SSLSNIFF 1
+.SH NAME
+sslsniff \- Monitoring a zobrazení informací o SSL spojení
+.SH SYNOPSIS
+.B sslsniff
+[\fB\-r\fR \fI<file>\fR]
+[\fB\-i\fR \fIinterface\fR]
+[\fB\-h\fR]
+
+.SH DESCRIPTION
 Monitoring SSL spojení do předmětu Síťové aplikace a správa sítí, který zpracuje pcap soubor nebo zachytává spojení na síťovém rozhraní a zobrazí informace o SSL spojení.
 
-## Použití
-`./sslsniff [-r <file>] [-i interface]` případně `./sslsniff -h` pro zobrazení nápovědy
-
-## Parametry
- - `-h` nebo `--help` zobrazení nápovědy
- - `-r <file>` soubor, ze kterého bude program naslouchat
- - `-i interface`  rozhraní, na kterém se bude poslouchat;  není-li uveden interface (avšak parametr -i je přítomen), vypíše se seznam aktivních rozhraní
- - není-li ani jeden z parametrů `-r` a `-i` uveden, vypíše se nápověda
- - jsou-li uvedeny oba parametry, upřednostňuje se čtení ze souboru
-
-## Překlad
- -`make`
-
-## Soubory
- - sslsniff.cpp
- - Args.cpp
- - Args.h
- - sslsniff.1
-
-## Omezení
+.SH OPTIONS
+.TP
+\fB\-h ", " \-\-help\fR 
+Zobrazení nápovědy.
+.TP
+\fB\-r <file>\fR
+Soubor se síťovým provozem.
+.TP
+\fB\-i interface\fR
+Zařízení, na kterém se má zachytávat síťový provoz. 
+V případě chybějícího rozhraní se vypíše seznam rozhraní.

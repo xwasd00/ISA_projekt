@@ -1,0 +1,73 @@
+\documentclass[a4paper, 12pt, titlepage]{article}
+\usepackage{times}
+\usepackage[utf8]{inputenc}
+\usepackage[czech]{babel}
+\usepackage[left=2cm, top=3cm, text={17cm, 24cm}]{geometry}
+\usepackage[unicode]{hyperref}
+\usepackage{graphicx}
+\usepackage{float}
+\urlstyle{same}
+\renewcommand{\figurename}{Obrázek}
+
+\begin{document}
+
+\include{title}
+\tableofcontents
+\newpage
+
+\section{Úvod do problematiky}
+
+
+%\begin{figure}[H]
+%    \centering
+%    \scalebox{0.39}{\includegraphics{ip-v4-datagram-header.png}}
+%    \caption{Hlavička IPv4\cite{obr1}}
+%    \label{obrazek 1}
+%\end{figure}
+
+\section{Implementace}
+Program nejdříve zpracuje argumenty programu pomocí getopts\cite{getopt}. Otevře rozhraní pro zachytávání paketů nebo otevře soubor se síťovým provozem, nastaví filtr na zachytávání tcp paketů a pomocí funkce \verb|pcap_loop| a \verb|callback| funkce\cite{pcap} zachytává pakety. V~\verb|callback| funkci zavolá funkci \verb|getAddress|. Tato funkce zjistí z IP nebo IPv6 hlavičky zdrojovou a cílovou adresu a velikost IP hlavičky. Z TCP se získá zdrojový a cílový port. Následně se spojení vyhledá ve vektoru \verb|conn_vec|, v případě nenalezení se do vektoru vloží nové spojení. Následně se zjistí, zda-li jde o SSL spojení. V případě ukončení spojení se SSL spojení vypíše a spojení se smaže z vektoru spojení. Za ukončení spojení se považuje zachycení TCP s příznakem FIN z obou stran (od serveru i klienta), nebo zachycení TCP s příznakem RST z jedné strany.
+
+
+\subsection{SSL}
+Cyklus v \verb|callback| funkci přečítá bajt po bajtu obsah a hledá příznaky SSL hlavičky, která obsahuje typ hlavičky, verzi protokolu a délku zprávy. Toto řešení je z důvodu možné různé velikosti obsahu tcp a velikosti SSL obsahu. V případě handshake program sleduje, zda se jedná o Client Hello nebo Server Hello. V případě Client Hello se snaží najít Server Name Indication (SNI). V případě nenalezení se místo SNI nic nevypíše.
+
+
+\subsection{využití knihoven}
+
+Bylo využito knihovny pcap.h a jejich funkcí pro zachytávaní paketů. Knihovny netinet/ip.h pro použití struktury \verb|struct ip|, ze které analyzátor načítá adresy a kontroluje další hlavičku. Podobně díky knihovně netinet/ip6.h a struktuře \verb|struct ip6_hdr|. Z~knihovny netinet/tcp.h bylo využito struktury \verb|struct tcphdr|. 
+
+\section{Základní informace o programu}
+Informace o SSL spojení se vypisují ve tvaru: \verb|<timestamp>,<client~ip>,<client~port>,<server~ip>,<SNI>,<bytes>,<packets>,<duration sec>|\newline
+Všechny časové údaje jsou zaokrouhlené na 6 desetinných míst.
+
+\subsection{Návod na použití}
+\begin{itemize}
+  \item \verb|./sslsniff -h| pro zobrazení nápovědy.
+  \item \verb|./sslsniff -r file.pcapng| kde file.pcapng obsahuje zachycený síťový provoz.
+  \item \verb|./sslsniff -i interface| kde interface je rozhraní pro zachytávání. Tento příkaz je nutný zadat s dostatečnými právy (sudo).
+  \item Není-li uveden interface (avšak parametr -i je přítomen), vypíše se seznam aktivních rozhraní.
+\end{itemize}
+
+\subsection{Upřesnění chování}
+\begin{itemize}
+    \item Program ignoruje neznámé argumenty.
+    \item V případě zadání obou argumentů ('-r' i '-i'), program upřednostní čtení ze souboru (argument -r).
+    \item Není-li ani jeden z parametrů `-r` a `-i` uveden, vypíše se nápověda. 
+\end{itemize}
+
+\newpage
+\section{Použité zdroje}
+\begin{thebibliography}{99}
+\bibitem{getopt} Ashwin, V., 2015. How To Parse Program Options In C++ Using Getopt\_Long. [online] Code Yarns. Dostupné z:\url{https://codeyarns.com/2015/01/30/how-to-parse-program-options-in-c-using-getopt\_long/}
+\bibitem{pcap} Carstens, T., 2020. Programming With Pcaptcpdump/LIBPCAP Public Repository. [online] Tcpdump.org. Dostupné z: \url{https://www.tcpdump.org/pcap.html}
+
+\end{thebibliography}
+
+\subsection{Obrázky}
+\begin{thebibliography}{99}
+% \bibitem{obr1} GeeksforGeeks. n.d. Introduction And Ipv4 Datagram Header - Geeksforgeeks. [online] Dostupné z: \url{https://www.geeksforgeeks.org/introduction-and-ipv4-datagram-header/}
+\end{thebibliography}
+
+
+\end{document}

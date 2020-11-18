@@ -429,16 +429,16 @@ void callback(u_char* user, const struct pcap_pkthdr* header, const u_char* pack
                 strcmp(connection->client_addr, dst_addr) == 0 && connection->client_port == dst_port){
             connection->server_fin = true;
         }
-        //jde o ssl spojení
-        if(connection->ssl && connection->srv_hello) {
 
+        //FIN ze serveru i od klienta -> vypsání spojení
+        if (connection->client_fin && connection->server_fin) {
 
-            //FIN ze serveru i od klienta -> vypsání spojení
-            if (connection->client_fin && connection->server_fin) {
+            //jde o ssl spojení
+            if(connection->ssl && connection->srv_hello) {
                 print_conn(connection);
-                remove_from_vec(connection);
-                return;
             }
+            remove_from_vec(connection);
+            return;
         }
     }
 
