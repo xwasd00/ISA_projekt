@@ -1,0 +1,18 @@
+# Monitoring SSL spojení
+Monitoring SSL spojení do předmětu Síťové aplikace a správa sítí, který zpracuje pcap soubor nebo zachytává spojení na síťovém rozhraní a zobrazí informace o SSL spojení.
+## Použití
+`./sslsniff [-r <file>] [-i interface]` případně `./sslsniff -h` pro zobrazení nápovědy
+## Parametry
+ - `-h` nebo `--help` zobrazení nápovědy
+ - `-r <file>` soubor, ze kterého bude program naslouchat
+ - `-i interface`  rozhraní, na kterém se bude poslouchat;  není-li uveden interface (avšak parametr -i je přítomen), vypíše se seznam aktivních rozhraní
+ - není-li ani jeden z parametrů `-r` a `-i` uveden, vypíše se nápověda
+ - jsou-li uvedeny oba parametry, upřednostňuje se čtení ze souboru
+ ## Překlad
+ -`make`
+## Soubory
+ - sslsniff.cpp
+ - Args.cpp
+ - Args.h
+ - sslsniff.1
+## Omezení

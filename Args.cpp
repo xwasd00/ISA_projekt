@@ -79,7 +79,6 @@ int Args::getOpts(int argc, char** argv){
 
 	//není ani soubor ani rozhraní 
 	if(!file && dev.size() == 0){
-		cerr << "ani soubor ani rozhraní" << endl;
 		printHelp();
 		return -1;
 	}
