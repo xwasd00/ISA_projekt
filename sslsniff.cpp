@@ -17,7 +17,6 @@
 using namespace std;
 
 #define ETHERNET_SIZE       14
-#define ETH_P_8021Q         0x8100
 #define TCP_PROTOCOL        6
 
 //typ ssl spojení
@@ -34,8 +33,8 @@ using namespace std;
 #define TLS1_3 0x304
 
 // typ zprávy handshake
-#define CLIENT_HELLO          0x01 // 1
-#define SERVER_HELLO          0x02 // 2
+#define CLIENT_HELLO          0x01
+#define SERVER_HELLO          0x02
 
 /**
  * @var conn
@@ -179,7 +178,7 @@ void switch_client_server(conn *c){
  * @param src_port zdrojový port tcp spojení
  * @param dst_port cílový port tcp spojení
  * @param ts čas příchodu paketu, v případě nenalezení spojení
- * @return ukazatel na nalezené/nově přidané spojení
+ * @return ukazatel na nalezené nebo nově přidané spojení
  */
 conn* check_conn(char* src_addr, char* dst_addr, u_short src_port, u_short dst_port, timeval ts){
 
@@ -211,6 +210,8 @@ conn* check_conn(char* src_addr, char* dst_addr, u_short src_port, u_short dst_p
 
     //časové razítko prvního paketu
     tmp.start_time = ts;
+
+    //přidání spojení na konec a vrácení ukazatele na poslední prvek, který by měl být dané spojení
     conn_vec.push_back(tmp);
     return &conn_vec.back();
 }
@@ -247,6 +248,7 @@ void remove_from_vec(conn* c){
  * @returns 1 ip hlavička nenalezena
  */
 int getAddr(ip* iph, char* src_addr,  char* dst_addr, unsigned* offset){
+
     // jde o IPv4 hlavičku
     if (iph->ip_v == 4){
         // posunutí offsetu o velikost tcp hlavičky
@@ -256,7 +258,8 @@ int getAddr(ip* iph, char* src_addr,  char* dst_addr, unsigned* offset){
         inet_ntop(AF_INET, (void*)&(iph->ip_dst), dst_addr, INET_ADDRSTRLEN);
         return 0;
     }
-        // jde o IPv6
+
+    // jde o IPv6
     else if(iph->ip_v == 6){
         // posunutí offsetu o velikost tcp hlavičky
         *offset = *offset + sizeof(ip6_hdr);
@@ -266,6 +269,8 @@ int getAddr(ip* iph, char* src_addr,  char* dst_addr, unsigned* offset){
         inet_ntop(AF_INET6, (void*)&(ip6h->ip6_dst), dst_addr, INET6_ADDRSTRLEN);
         return 0;
     }
+
+    // ani ipv4 ani ipv6 - nepodporovaná možnost
     return 1;
 }
 
@@ -307,20 +312,21 @@ void callback(u_char* user, const struct pcap_pkthdr* header, const u_char* pack
     //přičtení paketu ke spojení
     connection->packets++;
 
-    //možná je poslední
+    //možná je poslední paket -> zapsání koncového času
     connection->end_time = header->ts;
 
     char * data;
     u_short version;
     unsigned length;
 
-    // cyklus hledá v paketu ssl hlavičky
+    // cyklus, který hledá v paketu ssl hlavičky
 	while(header->caplen >= offset + 5){
         data = (char*)(packet + offset);
 
         /// HANDSHAKE
         //možná následuje Handshake
         if(*data == HANDSHAKE){
+
             //verze ssl
 	        version = htons( *( (u_short *)&(*(data+1)) ) );
             if(version == TLS1_0 || version == TLS1_1 ||
@@ -328,6 +334,7 @@ void callback(u_char* user, const struct pcap_pkthdr* header, const u_char* pack
 
                 //typ handshake
                 char *hello_ptr = data + 5;
+
                 /// Client Hello
                 if(*hello_ptr == CLIENT_HELLO){
                     connection->ssl = true;
@@ -336,11 +343,14 @@ void callback(u_char* user, const struct pcap_pkthdr* header, const u_char* pack
                     if(strcmp(connection->client_addr, src_addr) != 0){
                         switch_client_server(connection);
                     }
+
                     //získání Server Name Indication
                     get_SNI( hello_ptr, connection );
+
                     //přičtení velikosti ssl zprávy do celkové velikosti ssl spojení
                     length = htons( *( (u_short *)&(*(data + 3)) ) );
                     connection->bytes += length;
+
                     //přeskočení dat o délku zprávy -> délka + velikost délky(2) + verze(2) + typ(1)
                     offset += length + 5;
                 }
@@ -363,6 +373,7 @@ void callback(u_char* user, const struct pcap_pkthdr* header, const u_char* pack
                     //přičtení velikosti ssl zprávy do celkové velikosti ssl spojení
                     length = htons( *( (short *)&(*(data + 3)) ) );
                     connection->bytes += length;
+
                     //přeskočení dat o délku zprávy -> délka + velikost délky(2) + verze(2) + typ(1)
                     offset += length + 5;
                 }
@@ -384,14 +395,13 @@ void callback(u_char* user, const struct pcap_pkthdr* header, const u_char* pack
             //verze ssl
 	        if(version == TLS1_0 || version == TLS1_1 ||
 	            version == TLS1_2 || version == SSL3_0 || version == TLS1_3) {
-                //přičtení velikosti ssl zprávy do celkové velikosti ssl spojení
+
+	            //přičtení velikosti ssl zprávy do celkové velikosti ssl spojení
                 length = htons( *( (short *)&(*(data+3)) ) );
                 connection->bytes += length;
+
                 //přeskočení dat o délku zprávy -> délka + velikost délky(2) + verze(2) + typ(1)
                 offset += length + 5;
-                if(strcmp(connection->SNI.data(), "preview.redd.it") == 0){
-                    printf("%d : %02hhx %02hhx\n", length, *(data+3), *(data+4));
-                }
             }
 
 	        //nesprávná verze ssl -> není ssl
@@ -406,7 +416,7 @@ void callback(u_char* user, const struct pcap_pkthdr* header, const u_char* pack
         }
     }
 
-    //jde o FIN
+    /// FIN
     if(tcp->fin){
 
         //fin od klienta
@@ -427,16 +437,13 @@ void callback(u_char* user, const struct pcap_pkthdr* header, const u_char* pack
             if (connection->client_fin && connection->server_fin) {
                 print_conn(connection);
                 remove_from_vec(connection);
+                return;
             }
         }
-        //není ssl
-        else {
-            return;
-        }
-
     }
-    //RST -> okamžité ukončení spojení
-    else if(tcp->rst){
+
+    /// RST -> okamžité ukončení spojení
+    if(tcp->rst){
         if(connection->ssl && connection->srv_hello) {
             print_conn(connection);
             remove_from_vec(connection);
@@ -449,7 +456,7 @@ void callback(u_char* user, const struct pcap_pkthdr* header, const u_char* pack
 /**
  * @returns 0 všechno v pořádku
  * @returns 50 chyba při parsování argumentů
- * @returns 51 chyba při otvírání rozhraní
+ * @returns 51 chyba při otevírání rozhraní
  * @returns 52 chyba při nastavení filtru
  * @returns 53 chyba při přijímání paketu
  */
@@ -481,7 +488,7 @@ int main(int argc, char** argv){
 	// vytvořeno podle: https://www.tcpdump.org/pcap.html
 
 	
-	// otevření rozhraní (podle argumentu DEV) pro analyzování
+	// otevření rozhraní nebo souboru => upřednostnění souboru
 	if(arg.file){
 		handle = pcap_open_offline(arg.filename.data(), errbuff);
 	}
@@ -521,7 +528,7 @@ int main(int argc, char** argv){
     pcap_freecode(&fp);
 	pcap_close(handle);
 /*
-	// vypsání neukončeného spojení (v případě zachytávání ze souboru)
+	// vypsání neukončených spojení (v případě zachytávání ze souboru)
     for(auto connection = conn_vec.begin(); connection != conn_vec.end(); ++connection) {
         if (connection->ssl && connection->srv_hello) {
             print_conn(&(*connection));

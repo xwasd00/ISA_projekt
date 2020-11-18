@@ -1,4 +1,1 @@
 Args.cpp - co kdyz budou oba argumenty(-i a -r)? asi ukoncit, nebo uprednostnit jeden argument?
-Args.h - komentáře(kontrola)
-Args.cpp - komentáře(kontrola)
-sslsniff - komentáře(ve funkcích -> více)

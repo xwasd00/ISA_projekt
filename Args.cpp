@@ -32,14 +32,14 @@ int Args::getOpts(int argc, char** argv){
 	while((option = getopt_long(argc, argv, ":i:r:h", longopts, nullptr)) != -1){
 		switch(option){
 
-			// ./sslsniff -i interface
-			// kde DEV je název rozhraní (např. eth0)
+			// ./sslsniff -i <interface>
+			// kde <interfacce> je název rozhraní (např. eth0)
         	case 'i':
 				dev = optarg;
 				break;
 
 			// ./sslsniff -r <file>
-			// kde DEV je název rozhraní (např. eth0)
+			// kde <file> je název souboru se síťovým provozem (*.pcapng)
 			case 'r':
 				filename = optarg;
 				file = true;
@@ -52,7 +52,7 @@ int Args::getOpts(int argc, char** argv){
 				return -1;
 				break;
 			
-			// chybí hodnota možnosti (např. -p PORT)
+			// chybí soubor v případě -r
 			// v případě argumentu -i bez hodnoty vypíše názvy možných rozhraní
 			case ':':
 				if(optopt == 'i'){
@@ -83,8 +83,10 @@ int Args::getOpts(int argc, char** argv){
 		printHelp();
 		return -1;
 	}
+
 	return 0;
 }
+
 /**
  * @brief vypsání možných rozhraní
  * */
@@ -121,6 +123,7 @@ void Args::printDevs(){
 	pcap_freealldevs(alldevs);
 	return;
 }
+
 /**
  * @brief funkce pro vypsání nápovědy
  * */
